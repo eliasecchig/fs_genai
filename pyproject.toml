@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "fs-genai"
+version = "0.1.0"
+description = ""
+authors = ["Your Name <eliasecchi@google.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+langchain-google-vertexai = "^1.0.3"
+jupyter = "^1.0.0"
+langchain-google-community = "^1.0.3"
+tqdm = "^4.66.4"
+numpy = "^1.26.4"
+pandas = "^2.2.2"
+db-dtypes = "^1.2.0"
+langchain = "^0.1.19"
+joblib = "^1.4.2"
+
+[tool.poetry.group.dev.dependencies]
+google-cloud-bigquery = "^3.22.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
