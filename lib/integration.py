@@ -795,7 +795,7 @@ class VertexFeatureStore(VectorStore, BaseModel):
             embeddings = [embeddings]  # Ensure embeddings is a list of lists
 
         if queries is not None:
-            embeddings = self.embedding.embed_documents(queries, task="RETRIEVAL_QUERY")
+            embeddings = self.embedding.embed(texts=queries, embeddings_task_type="RETRIEVAL_QUERY")
 
         return self.similarity_search_by_vectors(embeddings, k, with_scores, with_embeddings)
 
