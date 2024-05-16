@@ -225,7 +225,8 @@ class BigQueryExecutor(BaseExecutor):
         for start in range(0, len(embeddings), batch_size):
             end = start + batch_size
             embs_batch = embeddings[start: end]
-            final_results.extend(self._search_embeddings(embeddings=embs_batch, k=k))
+            final_results.extend(self._search_embeddings(embeddings=embs_batch, filter=filter, k=k))
+        if len(final_results) == 0: return [[]]
         documents = []
         fields = [x for x in final_results[0].keys() if
                   x not in [self._vector_store.text_embedding_field, self._vector_store.content_field]]
@@ -239,7 +240,20 @@ class BigQueryExecutor(BaseExecutor):
         results_chunks = [documents[i * k:(i + 1) * k] for i in range(len(embeddings))]
         return results_chunks
 
-    def _search_embeddings(self, embeddings, k=5):
+    def _search_embeddings(
+            self,
+            embeddings,
+            filter: Optional[Dict[str, Any]] = None,
+            k=5
+        ):
+        if filter:
+            filter_expressions = []
+            for column, value in filter.items():
+                filter_expressions.append(f"base.{column} = '{value}'")
+            where_filter_expr = " AND ".join(filter_expressions)
+        else:
+            where_filter_expr = "TRUE"
+
         embeddings_query = "with embeddings as (\n"
         for i in range(len(embeddings)):
             if i != 0:
@@ -267,10 +281,14 @@ class BigQueryExecutor(BaseExecutor):
             distance_type => "EUCLIDEAN",
             top_k => {k}
         )
+        WHERE {where_filter_expr}
         ORDER BY row_num, score
         """
-        results = self._vector_store._bq_client.query(full_query, job_config=job_config,
-                                                      api_method=bigquery.enums.QueryApiMethod.QUERY)
+        results = self._vector_store._bq_client.query(
+            full_query, 
+            job_config=job_config,
+            api_method=bigquery.enums.QueryApiMethod.QUERY
+        )
         return list(results)
 
 
