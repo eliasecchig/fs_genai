@@ -625,11 +625,7 @@ class VertexFeatureStore(VectorStore, BaseModel):
                             }
         Returns:
             List of ids from adding the texts into the vectorstore.
-        """
-
-        metadata_fields = list(self.extra_fields.keys())
-        metadata_fields_str = ", ".join(metadata_fields)
-
+        """    
         if ids and len(ids) > 0:
 
             job_config = bigquery.QueryJobConfig(
@@ -643,20 +639,8 @@ class VertexFeatureStore(VectorStore, BaseModel):
             id_expr = "TRUE"
         if filter:
             filter_expressions = []
-            for i in filter.items():
-                if isinstance(i[1], float):
-                    expr = (
-                        "ABS(CAST(JSON_VALUE("
-                        f"`{metadata_fields_str}`,'$.{i[0]}') "
-                        f"AS FLOAT64) - {i[1]}) "
-                        f"<= {sys.float_info.epsilon}"
-                    )
-                else:
-                    val = str(i[1]).replace('"', '\\"')
-                    expr = (
-                        f"JSON_VALUE(`{metadata_fields_str}`,'$.{i[0]}')" f' = "{val}"'
-                    )
-                filter_expressions.append(expr)
+            for column, value in filter.items():
+                filter_expressions.append(f"{column} = '{value}'")
             filter_expression_str = " AND ".join(filter_expressions)
             where_filter_expr = f" AND ({filter_expression_str})"
         else:
