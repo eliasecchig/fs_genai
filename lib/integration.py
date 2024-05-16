@@ -72,9 +72,18 @@ class BruteForceExecutor(BaseExecutor):
         self._vectors_transpose = self._vectors.T
         self._df_records = self._df.drop(columns=[self._vector_store.text_embedding_field]).to_dict("records")
 
+    @staticmethod
+    def _doc_match_filter(document: Dict[str, Any], filter: Optional[Dict[str, Any]]) -> bool:
+        for column, value in filter.items():
+            # ignore fields that are not part of the document
+            if document.get(column, value) != value:
+                return False
+        return True
+
     def similarity_search_by_vectors_with_scores_and_embeddings(
             self,
             embeddings: List[float],
+            filter: Optional[Dict[str, Any]] = None,
             k: int = 5,
     ) -> List[List[Document, float, List[float]]]:
         num_queries = len(embeddings)
@@ -88,6 +97,7 @@ class BruteForceExecutor(BaseExecutor):
         for query_results, query_scores, embeddings_results in zip(results, top_scores, top_embeddings):
             query_docs = []
             for doc, doc_score, embedding in zip(query_results, query_scores, embeddings_results):
+                if filter is not None and not self._doc_match_filter(document=doc, filter=filter): continue
                 query_docs.append(
                     [Document(page_content=doc[self._vector_store.content_field], metadata=doc), doc_score, embedding])
             documents.append(query_docs)
@@ -206,6 +216,7 @@ class BigQueryExecutor(BaseExecutor):
     def similarity_search_by_vectors_with_scores_and_embeddings(
             self,
             embeddings: List[List[float]],
+            filter: Optional[Dict[str, Any]] = None,
             k: int = 5,
             batch_size: int = 100
     ) -> List[Tuple[Document, List[float], float]]:
@@ -310,6 +321,7 @@ class FeatureOnlineStoreExecutor(BaseExecutor):
     def similarity_search_by_vectors_with_scores_and_embeddings(
             self,
             embeddings: List[float],
+            filter: Optional[Dict[str, Any]] = None,
             k: int = 5,
     ) -> List[Tuple[Document, List[float], float]]:
         # TODO add metadata filtering
@@ -710,13 +722,20 @@ class VertexFeatureStore(VectorStore, BaseModel):
             None, partial(self.delete, **kwargs), ids
         )
 
-    def similarity_search_by_vectors(self, embeddings, k=5, with_scores=False, with_embeddings=False):
+    def similarity_search_by_vectors(
+            self, 
+            embeddings, 
+            filter: Optional[Dict[str, Any]] = None, 
+            k=5, 
+            with_scores=False, 
+            with_embeddings=False
+        ):
         """
         Core similarity search function. Handles a list of embedding vectors, optionally
         returning scores and embeddings.
         """
 
-        results = self.executor.similarity_search_by_vectors_with_scores_and_embeddings(embeddings, k)
+        results = self.executor.similarity_search_by_vectors_with_scores_and_embeddings(embeddings=embeddings, k=k, filter=filter)
 
         # Process results based on options
         for i, query_results in enumerate(results):
@@ -733,7 +752,11 @@ class VertexFeatureStore(VectorStore, BaseModel):
         return results
 
     def similarity_search_by_vector(
-            self, embedding: List[float], k: int = 5) -> List[Document]:
+            self, 
+            embedding: List[float], 
+            filter: Optional[Dict[str, Any]] = None, 
+            k: int = 5
+        ) -> List[Document]:
         """Return docs most similar to embedding vector.
 
         Args:
@@ -743,29 +766,52 @@ class VertexFeatureStore(VectorStore, BaseModel):
         Returns:
             List of Documents most similar to the query vector.
         """
-        return self.similarity_search_by_vectors(embeddings=[embedding], k=k)[0]
+        return self.similarity_search_by_vectors(embeddings=[embedding], k=k, filter=filter)[0]
 
-    def similarity_search_by_vector_with_score(self, embedding, k=5):
+    def similarity_search_by_vector_with_score(
+            self, 
+            embedding, 
+            filter: Optional[Dict[str, Any]] = None,
+            k=5
+        ):
         """
         Searches for similar items given a single embedding vector and returns results with scores.
         """
-        return self.similarity_search_by_vectors([embedding], k, with_scores=True)[0]
+        return self.similarity_search_by_vectors(embeddings=[embedding], filter=filter, k=k, with_scores=True)[0]
 
-    def similarity_search(self, query, k=5):
+    def similarity_search(
+            self, 
+            query,
+            filter: Optional[Dict[str, Any]] = None,
+            k=5
+        ):
         """
         Searches for similar items given a query string and returns results without scores or embeddings.
         """
         embedding = self.embedding.embed_query(query)
-        return self.similarity_search_by_vectors([embedding], k)[0]
+        return self.similarity_search_by_vectors(embeddings=[embedding], filter=filter, k=k)[0]
 
-    def similarity_search_with_score(self, query, k=5):
+    def similarity_search_with_score(
+            self,
+            query,
+            filter: Optional[Dict[str, Any]] = None,
+            k=5
+        ):
         """
         Searches for similar items given a query string and returns results with scores.
         """
         embedding = self.embedding.embed_query(query)
-        return self.similarity_search_by_vector_with_score(embedding, k)
+        return self.similarity_search_by_vector_with_score(embedding=embedding, filter=filter, k=k)
 
-    def batch_search(self, embeddings=None, queries=None, k=5, with_scores=False, with_embeddings=False):
+    def batch_search(
+            self,
+            embeddings=None,
+            queries=None,
+            filter: Optional[Dict[str, Any]] = None,
+            k=5,
+            with_scores=False,
+            with_embeddings=False
+        ):
         """
         Multi-purpose batch search function. Accepts embeddings, queries, or both.
         """
@@ -781,11 +827,18 @@ class VertexFeatureStore(VectorStore, BaseModel):
         if queries is not None:
             embeddings = self.embedding.embed(texts=queries, embeddings_task_type="RETRIEVAL_QUERY")
 
-        return self.similarity_search_by_vectors(embeddings, k, with_scores, with_embeddings)
+        return self.similarity_search_by_vectors(
+            embeddings=embeddings,
+            filter=filter,
+            k=k, 
+            with_scores=with_scores, 
+            with_embeddings=with_embeddings
+        )
 
     def max_marginal_relevance_search(
             self,
             query: str,
+            filter: Optional[Dict[str, Any]] = None,
             k: int = 5,
             fetch_k: int = 25,
             lambda_mult: float = 0.5,
@@ -818,6 +871,7 @@ class VertexFeatureStore(VectorStore, BaseModel):
         embedding = self.embedding.embed_query(query)
         return self.max_marginal_relevance_search_by_vector(
             embedding=embedding,
+            filter=filter,
             k=k,
             fetch_k=fetch_k,
             lambda_mult=lambda_mult
@@ -826,6 +880,7 @@ class VertexFeatureStore(VectorStore, BaseModel):
     def max_marginal_relevance_search_by_vector(
             self,
             embedding: List[float],
+            filter: Optional[Dict[str, Any]] = None,
             k: int = 5,
             fetch_k: int = 25,
             lambda_mult: float = 0.5
@@ -856,8 +911,13 @@ class VertexFeatureStore(VectorStore, BaseModel):
             List of Documents selected by maximal marginal relevance.
         """
         doc_tuples = \
-            self.similarity_search_by_vectors(embeddings=[embedding], k=fetch_k, with_embeddings=True,
-                                              with_scores=True)[0]
+            self.similarity_search_by_vectors(
+                embeddings=[embedding], 
+                filter=filter, 
+                k=fetch_k, 
+                with_embeddings=True,
+                with_scores=True
+            )[0]
         doc_embeddings = [d[2] for d in doc_tuples]
         mmr_doc_indexes = maximal_marginal_relevance(
             np.array(embedding), doc_embeddings, lambda_mult=lambda_mult, k=k
