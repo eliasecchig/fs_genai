@@ -57,6 +57,14 @@ class BaseExecutor(BaseModel):
 
     def set_vector_store(self, vector_store: VertexFeatureStore):
         self._vector_store = vector_store
+    
+    @staticmethod
+    def _doc_match_filter(document: Dict[str, Any], filter: Optional[Dict[str, Any]]) -> bool:
+        for column, value in filter.items():
+            # ignore fields that are not part of the document
+            if document.get(column, value) != value:
+                return False
+        return True
 
 
 class BruteForceExecutor(BaseExecutor):
@@ -71,14 +79,6 @@ class BruteForceExecutor(BaseExecutor):
         self._vectors = np.array(self._df[self._vector_store.text_embedding_field].tolist())
         self._vectors_transpose = self._vectors.T
         self._df_records = self._df.drop(columns=[self._vector_store.text_embedding_field]).to_dict("records")
-
-    @staticmethod
-    def _doc_match_filter(document: Dict[str, Any], filter: Optional[Dict[str, Any]]) -> bool:
-        for column, value in filter.items():
-            # ignore fields that are not part of the document
-            if document.get(column, value) != value:
-                return False
-        return True
 
     def similarity_search_by_vectors_with_scores_and_embeddings(
             self,
@@ -301,6 +301,7 @@ class FeatureOnlineStoreExecutor(BaseExecutor):
     location: str = None
 
     def set_vector_store(self, vector_store: VertexFeatureStore):
+        #TODO check the table, datasets are consistent with the store and view
         self._vector_store = vector_store
         self.init_feature_store()
 
@@ -354,6 +355,7 @@ class FeatureOnlineStoreExecutor(BaseExecutor):
                         metadata[feature.name] = feature.value.string_value
                     else:
                         embedding = feature.value.double_array_value.values
+                if filter is not None and not self._doc_match_filter(document=metadata, filter=filter): continue
                 documents.append(
                     [
                         Document(page_content=metadata[self._vector_store.content_field], metadata=metadata),
@@ -364,7 +366,12 @@ class FeatureOnlineStoreExecutor(BaseExecutor):
             output.append(documents)
         return output
 
-    def _search_embedding(self, embedding, k=5):
+    def _search_embedding(
+            self,
+            embedding,
+            filter: Optional[Dict[str, Any]] = None,
+            k=5
+        ):
         query = NearestNeighborQuery(
             embedding=NearestNeighborQuery.Embedding(value=embedding),
             neighbor_count=k
